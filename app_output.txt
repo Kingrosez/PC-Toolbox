@@ -1,0 +1,8 @@
+Starting PC-Toolbox...
+Using CustomTkinter for UI framework
+Theme: Dark glassmorphism with blue accents
+Dashboard: Setting up UI with high-fidelity design...
+Dashboard: UI setup complete
+Application launched successfully!
+Navigate using the sidebar to view different screens.
+Dashboard data loaded

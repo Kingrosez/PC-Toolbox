@@ -1,0 +1,1 @@
+print(stat.FILE_ATTRIBUTE_REPARSE_POINT)

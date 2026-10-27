@@ -1,0 +1,44 @@
+test_calculate_storage_empty (test_dashboard_calculations.TestDashboardCalculations.test_calculate_storage_empty) ... ok
+test_calculate_storage_metrics (test_dashboard_calculations.TestDashboardCalculations.test_calculate_storage_metrics) ... ok
+test_format_uptime (test_dashboard_calculations.TestDashboardCalculations.test_format_uptime) ... ok
+test_boundary_values (test_dashboard_metrics.TestCpuCardUpdate.test_boundary_values) ... ok
+test_critical_threshold (test_dashboard_metrics.TestCpuCardUpdate.test_critical_threshold) ... ok
+test_normal_range (test_dashboard_metrics.TestCpuCardUpdate.test_normal_range) ... ok
+test_warning_threshold (test_dashboard_metrics.TestCpuCardUpdate.test_warning_threshold) ... ok
+test_zero_percent (test_dashboard_metrics.TestCpuCardUpdate.test_zero_percent) ... ok
+test_error_handling_does_not_hang (test_dashboard_metrics.TestRefreshCoordination.test_error_handling_does_not_hang)
+Simulate a refresh task that errors and ensure lock is released. ... ok
+test_first_acquisition_accepted (test_dashboard_metrics.TestRefreshCoordination.test_first_acquisition_accepted) ... ok
+test_initial_state (test_dashboard_metrics.TestRefreshCoordination.test_initial_state) ... ok
+test_overlapping_rejected (test_dashboard_metrics.TestRefreshCoordination.test_overlapping_rejected) ... ok
+test_release_after_failure (test_dashboard_metrics.TestRefreshCoordination.test_release_after_failure) ... ok
+test_release_after_success (test_dashboard_metrics.TestRefreshCoordination.test_release_after_success) ... ok
+test_release_idempotent (test_dashboard_metrics.TestRefreshCoordination.test_release_idempotent)
+Releasing multiple times should not change state. ... ok
+test_cancel_scan (test_temp_cleaner_controller.TestTempCleanerController.test_cancel_scan) ... ok
+test_overlapping_scan_rejection (test_temp_cleaner_controller.TestTempCleanerController.test_overlapping_scan_rejection) ... ok
+test_scan_empty (test_temp_cleaner_controller.TestTempCleanerController.test_scan_empty) ... ok
+test_scan_partial_results (test_temp_cleaner_controller.TestTempCleanerController.test_scan_partial_results) ... ok
+test_scan_success (test_temp_cleaner_controller.TestTempCleanerController.test_scan_success) ... ok
+test_duplicate_roots_no_double_count (test_temp_cleaner_service.TestTempCleanerService.test_duplicate_roots_no_double_count) ... ok
+test_files_outside_approved_roots_not_scanned (test_temp_cleaner_service.TestTempCleanerService.test_files_outside_approved_roots_not_scanned) ... ok
+test_invalid_roots_rejected (test_temp_cleaner_service.TestTempCleanerService.test_invalid_roots_rejected) ... ok
+test_missing_root_handled_gracefully (test_temp_cleaner_service.TestTempCleanerService.test_missing_root_handled_gracefully) ... ok
+test_no_deletion_on_scan (test_temp_cleaner_service.TestTempCleanerService.test_no_deletion_on_scan) ... ok
+test_symlink_skipped (test_temp_cleaner_service.TestTempCleanerService.test_symlink_skipped) ... skipped 'Symlink creation not permitted'
+test_total_size_and_count (test_temp_cleaner_service.TestTempCleanerService.test_total_size_and_count) ... ok
+test_valid_files_discovered (test_temp_cleaner_service.TestTempCleanerService.test_valid_files_discovered) ... ok
+test_cancel_method_calls_controller (test_temp_cleaner_view.TestTempCleanerView.test_cancel_method_calls_controller) ... skipped "Unable to create view due to GUI requirements: Mock object has no attribute 'theme'"
+test_cancelled_state (test_temp_cleaner_view.TestTempCleanerView.test_cancelled_state) ... skipped "Unable to create view due to GUI requirements: Mock object has no attribute 'theme'"
+test_completion_state_with_results (test_temp_cleaner_view.TestTempCleanerView.test_completion_state_with_results) ... skipped "Unable to create view due to GUI requirements: Mock object has no attribute 'theme'"
+test_done_calls_comp_state (test_temp_cleaner_view.TestTempCleanerView.test_done_calls_comp_state) ... skipped "Unable to create view due to GUI requirements: Mock object has no attribute 'theme'"
+test_idle_state (test_temp_cleaner_view.TestTempCleanerView.test_idle_state) ... skipped "Unable to create view due to GUI requirements: Mock object has no attribute 'theme'"
+test_initialization (test_temp_cleaner_view.TestTempCleanerView.test_initialization) ... skipped "Unable to create view due to GUI requirements: Mock object has no attribute 'theme'"
+test_run_method_updates_ui (test_temp_cleaner_view.TestTempCleanerView.test_run_method_updates_ui) ... skipped "Unable to create view due to GUI requirements: Mock object has no attribute 'theme'"
+test_scan_method_starts_thread (test_temp_cleaner_view.TestTempCleanerView.test_scan_method_starts_thread) ... skipped "Unable to create view due to GUI requirements: Mock object has no attribute 'theme'"
+test_scanning_state (test_temp_cleaner_view.TestTempCleanerView.test_scanning_state) ... skipped "Unable to create view due to GUI requirements: Mock object has no attribute 'theme'"
+
+----------------------------------------------------------------------
+Ran 37 tests in 1.083s
+
+OK (skipped=10)
