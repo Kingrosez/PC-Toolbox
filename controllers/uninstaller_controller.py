@@ -5,10 +5,11 @@ Orchestrates discovery and exposes filtered/sorted/paginated data to the view.
 
 import threading
 import time
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Callable
 
 from services.uninstaller_service import UninstallerService
 from services.activity_service import ActivityService
+from services.uninstall_executor import UninstallExecutor
 
 
 CATEGORIES = ["All Categories", "Browsers", "Development", "Utilities", "Security", "Other"]
@@ -21,16 +22,6 @@ SORT_OPTIONS = [
 
 
 class UninstallerController:
-    def __init__(self, activity_service: ActivityService, service: Optional[UninstallerService] = None):
-        self.activity_service = activity_service
-        self.service = service or UninstallerService()
-        self._is_scanning = False
-        self._lock = threading.Lock()
-        self._cancel = False
-        self._applications: List[Dict[str, Any]] = []
-        self._errors: List[str] = []
-        self._last_scan_time = None
-
     # ---------------------------------------------------------------- scanning
     def scan(self) -> Dict[str, Any]:
         with self._lock:
@@ -195,3 +186,60 @@ class UninstallerController:
                 return "%.1f %s" % (size_bytes, unit)
             size_bytes /= 1024.0
         return "%.1f PB" % size_bytes
+
+    # ---------------------------------------------------------------- uninstall execution
+    def __init__(self, activity_service: ActivityService, service: Optional[UninstallerService] = None):
+        self.activity_service = activity_service
+        self.service = service or UninstallerService()
+        self._is_scanning = False
+        self._lock = threading.Lock()
+        self._cancel = False
+        self._applications: List[Dict[str, Any]] = []
+        self._errors: List[str] = []
+        self._last_scan_time = None
+
+        # Uninstall executor
+        self.executor = UninstallExecutor(activity_service)
+        self._pending_uninstall_app = None
+
+    def execute_uninstall(self, app: Dict[str, Any],
+                          progress_callback: Optional[Callable] = None,
+                          done_callback: Optional[Callable] = None) -> Dict[str, Any]:
+        """Execute uninstall for an application."""
+        uninstall_string = app.get("uninstall_string")
+        if not uninstall_string:
+            return {"success": False, "message": "No uninstall command available"}
+
+        app_name = app.get("name", "Unknown")
+        self._pending_uninstall_app = app
+        self.activity_service.add_event("system", f"Uninstall initiated for {app_name}")
+
+        return self.executor.execute(
+            uninstall_string,
+            app_name,
+            progress_callback=progress_callback,
+            done_callback=lambda success, msg, code: self._on_uninstall_done(success, msg, code, done_callback)
+        )
+
+    def _on_uninstall_done(self, success: bool, message: str, return_code: int,
+                           done_callback: Optional[Callable] = None):
+        """Handle uninstall completion."""
+        app = self._pending_uninstall_app
+        if app:
+            app_name = app.get("name", "Unknown")
+            if success:
+                self.activity_service.add_event("system", f"Uninstall completed: {app_name}")
+            else:
+                self.activity_service.add_event("system", f"Uninstall failed: {app_name} - {message}", severity="error")
+
+        self._pending_uninstall_app = None
+        if done_callback:
+            done_callback(success, message, return_code)
+
+    def cancel_uninstall(self) -> bool:
+        """Cancel current uninstall if running."""
+        return self.executor.cancel()
+
+    def is_uninstalling(self) -> bool:
+        """Check if uninstall is in progress."""
+        return self.executor.is_running()

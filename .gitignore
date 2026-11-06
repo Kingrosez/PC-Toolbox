@@ -1,0 +1,22 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.bak
+*.old
+*.tmp
+*.log
+
+# Local editor/tool configuration
+.kilo/
+.vscode/
+.idea/
+
+# Scratch output from local debugging
+out*.txt
+app_output*.txt
+tempout.txt
+testout.txt
+test_output*.txt
