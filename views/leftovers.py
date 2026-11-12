@@ -79,6 +79,10 @@ class LeftoversView(ctk.CTkFrame):
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=1)
 
+        # Load any user-configured scan roots from settings before building the UI.
+        if self.ctrl.settings_service is not None:
+            self.ctrl.load_roots()
+
         self._setup_ui()
         self._idle()
 
@@ -518,23 +522,131 @@ class LeftoversView(ctk.CTkFrame):
     # --------------------------------------------------------- system cleanup
     def _create_system_cleanup_ui(self, parent):
         c = self.theme.colors
+        self.cleanup_container = ctk.CTkFrame(parent, fg_color=c["deep_background"])
+        self.cleanup_container.pack(fill="both", expand=True)
+        self.cleanup_container.grid_rowconfigure(0, weight=1)
+        self.cleanup_container.grid_columnconfigure(0, weight=1)
+
+        # Scrollable area
         self.cleanup_scroll = ctk.CTkScrollableFrame(
-            parent,
-            fg_color=c["deep_background"],
+            self.cleanup_container, fg_color=c["deep_background"],
             scrollbar_fg_color=c["glass_panel"],
             scrollbar_button_color=c["border"],
             scrollbar_button_hover_color=c["blue_accent"],
         )
-        self.cleanup_scroll.pack(fill="both", expand=True)
+        self.cleanup_scroll.grid(row=0, column=0, sticky="nsew")
         self.cleanup_scroll.grid_columnconfigure(0, weight=1)
 
         self._create_cleanup_header()
         self._create_cleanup_controls()
+        self._create_cleanup_filter_bar()
         self._create_cleanup_progress()
         self._create_cleanup_cards()
         self._create_cleanup_results()
-        self._create_cleanup_footer()
+
+        # Sticky bottom bar
+        self._create_cleanup_sticky_bar()
+
         self._cleanup_update_admin_ui()
+
+    def _create_cleanup_filter_bar(self):
+        """Search, sort and minimum-size filter above the item list."""
+        c = self.theme.colors
+        bar = ctk.CTkFrame(self.cleanup_scroll, fg_color="transparent")
+        bar.grid(row=2, column=0, sticky="ew", padx=24, pady=(0, 14))
+        bar.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(
+            bar, text="Search:", font=ctk.CTkFont(size=11),
+            text_color=c["secondary_text"],
+        ).grid(row=0, column=0, sticky="w", padx=(0, 8))
+        self.cleanup_search_entry = ctk.CTkEntry(
+            bar, placeholder_text="Filter items by name or path...",
+            font=ctk.CTkFont(size=11), height=28,
+            fg_color=c["glass_panel"], border_color=c["border"],
+            text_color=c["primary_text"],
+        )
+        self.cleanup_search_entry.grid(row=0, column=1, sticky="ew", padx=(0, 16))
+        self.cleanup_search_entry.bind("<KeyRelease>", lambda e: self._cleanup_render())
+
+        ctk.CTkLabel(
+            bar, text="Sort:", font=ctk.CTkFont(size=11),
+            text_color=c["secondary_text"],
+        ).grid(row=0, column=2, sticky="w", padx=(0, 8))
+        self.cleanup_sort_var = ctk.StringVar(value="size_desc")
+        self._cleanup_sort_map = {
+            "Largest first": "size_desc",
+            "Smallest first": "size_asc",
+            "Name A-Z": "name_asc",
+            "Name Z-A": "name_desc",
+        }
+        self.cleanup_sort_menu = ctk.CTkOptionMenu(
+            bar, values=list(self._cleanup_sort_map.keys()),
+            variable=self.cleanup_sort_var, font=ctk.CTkFont(size=11),
+            fg_color=c["glass_panel"], button_color=c["border"],
+            button_hover_color=c["blue_accent"], height=28,
+        )
+        self.cleanup_sort_menu.set("Largest first")
+        self.cleanup_sort_menu.configure(command=lambda _: self._cleanup_render())
+
+        ctk.CTkLabel(
+            bar, text="Min size:", font=ctk.CTkFont(size=11),
+            text_color=c["secondary_text"],
+        ).grid(row=0, column=3, sticky="w", padx=(0, 8))
+        self.cleanup_min_size_var = ctk.StringVar(value="0 MB")
+        self._cleanup_min_size_map = {
+            "0 MB": 0, "1 MB": 1024 * 1024, "10 MB": 10 * 1024 * 1024,
+            "100 MB": 100 * 1024 * 1024, "500 MB": 500 * 1024 * 1024,
+            "1 GB": 1024 * 1024 * 1024,
+        }
+        self.cleanup_min_size_menu = ctk.CTkOptionMenu(
+            bar, values=list(self._cleanup_min_size_map.keys()),
+            variable=self.cleanup_min_size_var, font=ctk.CTkFont(size=11),
+            fg_color=c["glass_panel"], button_color=c["border"],
+            button_hover_color=c["blue_accent"], height=28,
+        )
+        self.cleanup_min_size_menu.configure(command=lambda _: self._cleanup_render())
+
+    def _create_cleanup_sticky_bar(self):
+        """Always-visible bottom bar with selection totals and the clean button."""
+        c = self.theme.colors
+        bar = ctk.CTkFrame(
+            self.cleanup_container, fg_color=c["glass_panel"],
+            corner_radius=0, border_width=1, border_color=c["border"],
+        )
+        bar.grid(row=1, column=0, sticky="ew")
+        bar.grid_columnconfigure(1, weight=1)
+
+        self.cleanup_sticky_selection = ctk.CTkLabel(
+            bar, text="0 selected | 0 B",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=c["primary_text"],
+        )
+        self.cleanup_sticky_selection.grid(row=0, column=0, sticky="w", padx=16, pady=8)
+
+        self.cleanup_sticky_dry = ctk.CTkLabel(
+            bar, text="", font=ctk.CTkFont(size=10),
+            text_color=c["secondary_text"],
+        )
+        self.cleanup_sticky_dry.grid(row=0, column=1, sticky="w", padx=(0, 16), pady=8)
+
+        self.cleanup_select_all_b = ctk.CTkButton(
+            bar, text="Select all safe", command=self._cleanup_select_all_safe,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            fg_color="transparent", hover_color=c["hover_state"],
+            text_color=c["primary_text"], height=30, width=120, corner_radius=6,
+            border_width=1, border_color=c["border"],
+        )
+        self.cleanup_select_all_b.grid(row=0, column=2, sticky="e", padx=(0, 8), pady=6)
+
+        self.cleanup_clean_b = ctk.CTkButton(
+            bar, text="Clean Selected", command=self._cleanup_clean,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            fg_color=c["green_accent"], hover_color="#1CB884",
+            text_color="white", height=30, width=140, corner_radius=8,
+            state="disabled",
+        )
+        self.cleanup_clean_b.grid(row=0, column=3, sticky="e", padx=(0, 16), pady=6)
 
     def _create_cleanup_header(self):
         c = self.theme.colors
@@ -647,7 +759,7 @@ class LeftoversView(ctk.CTkFrame):
     def _create_cleanup_progress(self):
         c = self.theme.colors
         frame = ctk.CTkFrame(self.cleanup_scroll, fg_color="transparent")
-        frame.grid(row=2, column=0, sticky="ew", padx=24, pady=(0, 12))
+        frame.grid(row=3, column=0, sticky="ew", padx=24, pady=(0, 12))
         frame.grid_columnconfigure(0, weight=1)
 
         self.cleanup_progress = ctk.CTkProgressBar(
@@ -672,7 +784,7 @@ class LeftoversView(ctk.CTkFrame):
     def _create_cleanup_cards(self):
         c = self.theme.colors
         cards = ctk.CTkFrame(self.cleanup_scroll, fg_color="transparent")
-        cards.grid(row=3, column=0, sticky="ew", padx=24, pady=(0, 14))
+        cards.grid(row=4, column=0, sticky="ew", padx=24, pady=(0, 14))
         for i in range(3):
             cards.grid_columnconfigure(i, weight=1)
 
@@ -708,7 +820,7 @@ class LeftoversView(ctk.CTkFrame):
             self.cleanup_scroll, fg_color=c["glass_panel"], corner_radius=14,
             border_width=1, border_color=c["border"],
         )
-        panel.grid(row=4, column=0, sticky="ew", padx=24, pady=(0, 14))
+        panel.grid(row=5, column=0, sticky="ew", padx=24, pady=(0, 14))
         panel.grid_columnconfigure(0, weight=1)
 
         title_row = ctk.CTkFrame(panel, fg_color="transparent")
@@ -740,7 +852,7 @@ class LeftoversView(ctk.CTkFrame):
             self.cleanup_scroll, fg_color=c["glass_panel"], corner_radius=12,
             border_width=1, border_color=c["border"],
         )
-        footer.grid(row=5, column=0, sticky="ew", padx=24, pady=(0, 20))
+        footer.grid(row=6, column=0, sticky="ew", padx=24, pady=(0, 20))
         footer.grid_columnconfigure(0, weight=1)
 
         self.cleanup_selection_lbl = ctk.CTkLabel(
@@ -815,10 +927,10 @@ class LeftoversView(ctk.CTkFrame):
         self._cleanup_vars = {}
         self._cleanup_free_space = None
         self._cleanup_progress_queue = queue.Queue()
-        self._cleanup_scan_b.configure(state="disabled")
-        self._cleanup_cancel_b.configure(state="normal")
-        self._cleanup_clean_b.configure(state="disabled")
-        self._cleanup_select_all_b.configure(state="disabled")
+        self.cleanup_scan_b.configure(state="disabled")
+        self.cleanup_cancel_b.configure(state="normal")
+        self.cleanup_clean_b.configure(state="disabled")
+        self.cleanup_select_all_b.configure(state="disabled")
         self.cleanup_progress.set(0)
         self.cleanup_status_lbl.configure(
             text="Scanning system and developer junk...",
@@ -837,7 +949,7 @@ class LeftoversView(ctk.CTkFrame):
         if not self._cleanup_scanning:
             return
         self.cleanup_ctrl.cancel_scan()
-        self._cleanup_cancel_b.configure(state="disabled")
+        self.cleanup_cancel_b.configure(state="disabled")
         self.cleanup_status_lbl.configure(
             text="Cancelling scan...", text_color=self.theme.colors["orange_accent"]
         )
@@ -879,8 +991,8 @@ class LeftoversView(ctk.CTkFrame):
 
     def _cleanup_scan_done(self, result):
         self._cleanup_scanning = False
-        self._cleanup_scan_b.configure(state="normal")
-        self._cleanup_cancel_b.configure(state="disabled")
+        self.cleanup_scan_b.configure(state="normal")
+        self.cleanup_cancel_b.configure(state="disabled")
         self._cleanup_admin = bool(result.get("admin", self.cleanup_ctrl.is_admin()))
         self._cleanup_log_path = result.get("log_path") or self.cleanup_ctrl.get_log_path()
         self._cleanup_free_space = result.get("free_space")
@@ -927,23 +1039,55 @@ class LeftoversView(ctk.CTkFrame):
         for widget in self.cleanup_results.winfo_children():
             widget.destroy()
         self._cleanup_vars = {}
-        self.cleanup_table_title.configure(
-            text="System Cleanup Items (%s)" % format(len(self._cleanup_items), ",")
-        )
-        if not self._cleanup_items:
+        self._cleanup_tier_frames = {}  # tier -> (header_frame, items_container, expanded_boolvar)
+        self._cleanup_tier_expanded = {}
+
+        # Apply search filter
+        search_text = self.cleanup_search_entry.get().strip().lower()
+        min_size = self._cleanup_min_size_map.get(self.cleanup_min_size_var.get(), 0)
+        sort_key = self._cleanup_sort_map.get(self.cleanup_sort_var.get(), "size_desc")
+
+        # Filter and sort items
+        filtered_items = []
+        for item in self._cleanup_items:
+            if min_size and int(item.get("size", 0) or 0) < min_size:
+                continue
+            if search_text:
+                name = item.get("name", "").lower()
+                path = item.get("path", "").lower()
+                if search_text not in name and search_text not in path:
+                    continue
+            filtered_items.append(item)
+
+        # Sort
+        reverse = sort_key.endswith("_desc")
+        key_func = (lambda x: x.get("size", 0)) if "size" in sort_key else (lambda x: x.get("name", "").lower())
+        filtered_items.sort(key=key_func, reverse=reverse)
+
+        if not filtered_items:
+            self.cleanup_table_title.configure(
+                text="System Cleanup Items (0)"
+            )
             self._cleanup_show_no_results()
             return
+
+        self.cleanup_table_title.configure(
+            text="System Cleanup Items (%s)" % format(len(filtered_items), ",")
+        )
+
         for tier in (1, 2, 3, 4):
             tier_items = [
-                item for item in self._cleanup_items if item.get("tier") == tier
+                item for item in filtered_items if item.get("tier") == tier
             ]
             if not tier_items:
                 continue
-            self._create_cleanup_tier_header(tier, tier_items)
-            for item in tier_items:
-                self._create_cleanup_row(item)
+            self._create_cleanup_tier_section(tier, tier_items)
 
-    def _create_cleanup_tier_header(self, tier, items):
+        for item in filtered_items:
+            self._create_cleanup_row(item)
+
+    def _create_cleanup_tier_section(self, tier, items):
+        """Create a collapsible tier section header."""
         c = self.theme.colors
         colors = {
             1: c["green_accent"],
@@ -958,30 +1102,92 @@ class LeftoversView(ctk.CTkFrame):
             4: "TIER 4 - Report only (never deleted automatically)",
         }
         total = sum(int(item.get("size", 0) or 0) for item in items)
-        frame = ctk.CTkFrame(self.cleanup_results, fg_color="transparent")
-        frame.pack(fill="x", padx=8, pady=(10, 4))
+
+        # Default: Tier 1 expanded, others collapsed
+        expanded = ctk.BooleanVar(value=(tier == 1))
+        self._cleanup_tier_expanded[tier] = expanded
+
+        # Header frame
+        header_frame = ctk.CTkFrame(self.cleanup_results, fg_color="transparent")
+        header_frame.pack(fill="x", padx=8, pady=(10, 0))
+
+        # Toggle button
+        def toggle():
+            new_val = not expanded.get()
+            expanded.set(new_val)
+            self._cleanup_toggle_tier(tier, new_val)
+
+        toggle_btn = ctk.CTkButton(
+            header_frame, text="▼" if expanded.get() else "▶",
+            command=toggle, width=24, height=24,
+            fg_color="transparent", hover_color=c["hover_state"],
+            text_color=colors.get(tier, c["secondary_text"]),
+            font=ctk.CTkFont(size=11),
+        )
+        toggle_btn.pack(side="left", padx=(4, 0))
+
+        # Tier label with count and size
+        label_text = "%s  |  %d item(s)  |  %s" % (
+            labels.get(tier, "Tier %d" % tier),
+            len(items),
+            self.cleanup_ctrl.format_size(total)
+        )
         ctk.CTkLabel(
-            frame, text=labels.get(tier, "Tier %d" % tier),
+            header_frame, text=label_text,
             font=ctk.CTkFont(size=11, weight="bold"),
             text_color=colors.get(tier, c["secondary_text"]),
-        ).pack(side="left")
-        ctk.CTkLabel(
-            frame,
-            text="%d item(s) | %s" % (len(items), self.cleanup_ctrl.format_size(total)),
-            font=ctk.CTkFont(size=10), text_color=c["secondary_text"],
-        ).pack(side="right")
+        ).pack(side="left", padx=(8, 0))
+
+        # "Select all safe" checkbox for Tier 1
+        if tier == 1:
+            select_all_var = ctk.BooleanVar(value=True)
+            select_all_cb = ctk.CTkCheckBox(
+                header_frame, text="Select all safe", variable=select_all_var,
+                command=lambda: self._cleanup_select_all_safe(),
+                font=ctk.CTkFont(size=10), fg_color=c["blue_accent"],
+                hover_color=c["hover_state"], border_color=c["border"],
+                text_color=c["primary_text"],
+            )
+            select_all_cb.pack(side="right", padx=(0, 8))
+            self._cleanup_select_all_var = select_all_var
+
+        # Items container
+        items_frame = ctk.CTkFrame(self.cleanup_results, fg_color="transparent")
+        items_frame.pack(fill="x", padx=0, pady=(4, 0))
+        self._cleanup_tier_frames[tier] = (header_frame, items_frame, expanded, toggle_btn)
+
+    def _cleanup_toggle_tier(self, tier, expanded):
+        """Show/hide tier items and update toggle button."""
+        if tier in self._cleanup_tier_frames:
+            _, items_frame, _, toggle_btn = self._cleanup_tier_frames[tier]
+            if expanded:
+                items_frame.pack(fill="x", padx=0, pady=(4, 0))
+                toggle_btn.configure(text="▼")
+            else:
+                items_frame.pack_forget()
+                toggle_btn.configure(text="▶")
 
     def _create_cleanup_row(self, item):
         c = self.theme.colors
         item_id = item.get("id")
         admin_locked = bool(item.get("admin_required")) and not self._cleanup_admin
         selectable = bool(item.get("selectable", True)) and not admin_locked
+        tier = item.get("tier", 1)
+
+        # Get the tier's items container
+        items_frame = self.cleanup_results
+        if tier in self._cleanup_tier_frames:
+            _, items_frame, _, _ = self._cleanup_tier_frames[tier]
+
         row = ctk.CTkFrame(
-            self.cleanup_results, fg_color=c["glass_panel"], corner_radius=6,
+            items_frame, fg_color=c["glass_panel"], corner_radius=4,
             border_width=1, border_color=c["border"],
         )
-        row.pack(fill="x", padx=8, pady=2)
+        row.pack(fill="x", padx=8, pady=1, ipady=4)
         row.grid_columnconfigure(1, weight=1)
+        row.grid_columnconfigure(2, weight=0)  # path
+        row.grid_columnconfigure(3, weight=0)  # size
+        row.grid_columnconfigure(4, weight=0)  # badges
 
         var = ctk.BooleanVar(value=item_id in self._cleanup_selected)
         self._cleanup_vars[item_id] = var
@@ -992,87 +1198,76 @@ class LeftoversView(ctk.CTkFrame):
             border_color=c["border"],
             state="normal" if selectable else "disabled",
         )
-        checkbox.grid(row=0, column=0, sticky="w", padx=(8, 4), pady=8)
+        checkbox.grid(row=0, column=0, sticky="w", padx=(8, 4), pady=4)
 
+        # Name and truncated path
         info = ctk.CTkFrame(row, fg_color="transparent")
-        info.grid(row=0, column=1, sticky="ew", padx=4, pady=6)
+        info.grid(row=0, column=1, sticky="ew", padx=4, pady=4)
         info.grid_columnconfigure(0, weight=1)
         name_color = c["primary_text"] if selectable else c["muted_text"]
-        ctk.CTkLabel(
+        name_lbl = ctk.CTkLabel(
             info, text=item.get("name", "Item"),
-            font=ctk.CTkFont(size=12, weight="bold"),
+            font=ctk.CTkFont(size=11, weight="bold"),
             text_color=name_color, anchor="w",
-        ).grid(row=0, column=0, sticky="w")
-        ctk.CTkLabel(
-            info, text=item.get("path", ""),
-            font=ctk.CTkFont(size=10), text_color=c["muted_text"], anchor="w",
-        ).grid(row=1, column=0, sticky="w")
-        ctk.CTkLabel(
-            info, text=item.get("description", ""),
-            font=ctk.CTkFont(size=10), text_color=c["secondary_text"],
-            anchor="w", wraplength=620, justify="left",
-        ).grid(row=2, column=0, sticky="w", pady=(1, 0))
+        )
+        name_lbl.grid(row=0, column=0, sticky="w")
 
+        # Truncated path with tooltip
+        path = item.get("path", "")
+        max_path_len = 70
+        display_path = path if len(path) <= max_path_len else path[:max_path_len-3] + "..."
+        path_lbl = ctk.CTkLabel(
+            info, text=display_path,
+            font=ctk.CTkFont(size=9), text_color=c["muted_text"], anchor="w",
+        )
+        path_lbl.grid(row=1, column=0, sticky="w")
+        if len(path) > max_path_len:
+            self._cleanup_attach_tooltip(path_lbl, path)
+
+        # Size
+        ctk.CTkLabel(
+            row, text=self.cleanup_ctrl.format_size(item.get("size", 0)),
+            font=ctk.CTkFont(size=11, weight="bold"), text_color=c["primary_text"],
+        ).grid(row=0, column=3, sticky="e", padx=8, pady=4)
+
+        # Badges
         badges = ctk.CTkFrame(row, fg_color="transparent")
-        badges.grid(row=0, column=2, sticky="e", padx=6, pady=6)
+        badges.grid(row=0, column=4, sticky="e", padx=(0, 8), pady=4)
         if item.get("admin_required"):
             ctk.CTkLabel(
-                badges, text="Admin", font=ctk.CTkFont(size=9, weight="bold"),
-                text_color="white", fg_color=c["orange_accent"], corner_radius=4,
+                badges, text="Admin", font=ctk.CTkFont(size=8, weight="bold"),
+                text_color="white", fg_color=c["orange_accent"], corner_radius=3,
             ).pack(side="left", padx=2)
         if item.get("recoverable"):
             ctk.CTkLabel(
-                badges, text="Recycle", font=ctk.CTkFont(size=9, weight="bold"),
-                text_color="white", fg_color=c["green_accent"], corner_radius=4,
+                badges, text="Recycle", font=ctk.CTkFont(size=8, weight="bold"),
+                text_color="white", fg_color=c["green_accent"], corner_radius=3,
             ).pack(side="left", padx=2)
         if not item.get("selectable", True):
             ctk.CTkLabel(
-                badges, text="Report", font=ctk.CTkFont(size=9, weight="bold"),
-                text_color="white", fg_color=c["muted_text"], corner_radius=4,
+                badges, text="Report", font=ctk.CTkFont(size=8, weight="bold"),
+                text_color="white", fg_color=c["muted_text"], corner_radius=3,
             ).pack(side="left", padx=2)
         if item.get("delete_mode") == "command":
             ctk.CTkLabel(
-                badges, text="Tool", font=ctk.CTkFont(size=9, weight="bold"),
-                text_color="white", fg_color=c["blue_accent"], corner_radius=4,
+                badges, text="Tool", font=ctk.CTkFont(size=8, weight="bold"),
+                text_color="white", fg_color=c["blue_accent"], corner_radius=3,
+            ).pack(side="left", padx=2)
+        if tier == 3:
+            ctk.CTkLabel(
+                badges, text="⚠", font=ctk.CTkFont(size=10, weight="bold"),
+                text_color=c["orange_accent"],
+            ).pack(side="left", padx=2)
+        elif tier == 4:
+            ctk.CTkLabel(
+                badges, text="Report only", font=ctk.CTkFont(size=8, weight="bold"),
+                text_color="white", fg_color=c["red_accent"], corner_radius=3,
             ).pack(side="left", padx=2)
 
-        ctk.CTkLabel(
-            row, text=self.cleanup_ctrl.format_size(item.get("size", 0)),
-            font=ctk.CTkFont(size=12), text_color=c["primary_text"],
-        ).grid(row=0, column=3, sticky="e", padx=8, pady=6)
-
-        actions = ctk.CTkFrame(row, fg_color="transparent")
-        actions.grid(row=0, column=4, sticky="e", padx=(0, 8), pady=6)
-        metadata = item.get("metadata") or {}
-        action = metadata.get("action")
-        if action == "virtual_memory":
-            ctk.CTkButton(
-                actions, text="Virtual Memory", width=104, height=24,
-                font=ctk.CTkFont(size=10),
-                command=lambda it=item: self._cleanup_open_location(it),
-            ).pack(side="left", padx=2)
-        elif action == "open_location":
-            ctk.CTkButton(
-                actions, text="Open location", width=90, height=24,
-                font=ctk.CTkFont(size=10),
-                command=lambda it=item: self._cleanup_open_location(it),
-            ).pack(side="left", padx=2)
-        if metadata.get("allow_recycle"):
-            ctk.CTkButton(
-                actions, text="Open in Explorer", width=110, height=24,
-                font=ctk.CTkFont(size=10),
-                command=lambda it=item: self._cleanup_open_location(it),
-            ).pack(side="left", padx=2)
-            ctk.CTkButton(
-                actions, text="Send to Recycle Bin", width=120, height=24,
-                font=ctk.CTkFont(size=10), fg_color=c["red_accent"],
-                hover_color="#D06565", text_color="white",
-                command=lambda it=item: self._cleanup_recycle_item(it),
-            ).pack(side="left", padx=2)
-
+        # Tooltips
         if admin_locked:
             tip = "Run PC-Toolbox as administrator to enable this item."
-            for widget in (row, checkbox, info):
+            for widget in (row, checkbox, info, name_lbl, path_lbl):
                 self._cleanup_attach_tooltip(widget, tip)
         if item.get("warning"):
             self._cleanup_attach_tooltip(row, item.get("warning"))
@@ -1127,6 +1322,14 @@ class LeftoversView(ctk.CTkFrame):
         self.cleanup_selection_lbl.configure(
             text="%d selected | %s"
             % (len(selected_items), self.cleanup_ctrl.format_size(total))
+        )
+        # Update sticky bar
+        self.cleanup_sticky_selection.configure(
+            text="%d selected | %s"
+            % (len(selected_items), self.cleanup_ctrl.format_size(total))
+        )
+        self.cleanup_sticky_dry.configure(
+            text="Dry run" if self._cleanup_dry_run.get() else ""
         )
         busy = self._cleanup_scanning or self._cleanup_cleaning
         self.cleanup_clean_b.configure(
@@ -1248,10 +1451,10 @@ class LeftoversView(ctk.CTkFrame):
 
         self._cleanup_cleaning = True
         self._cleanup_progress_queue = queue.Queue()
-        self._cleanup_scan_b.configure(state="disabled")
-        self._cleanup_cancel_b.configure(state="disabled")
-        self._cleanup_clean_b.configure(state="disabled")
-        self._cleanup_select_all_b.configure(state="disabled")
+        self.cleanup_scan_b.configure(state="disabled")
+        self.cleanup_cancel_b.configure(state="disabled")
+        self.cleanup_clean_b.configure(state="disabled")
+        self.cleanup_select_all_b.configure(state="disabled")
         self.cleanup_progress.set(0)
         self.cleanup_status_lbl.configure(
             text="Dry run in progress..." if dry_run else "Cleanup in progress...",
@@ -1285,8 +1488,8 @@ class LeftoversView(ctk.CTkFrame):
 
     def _cleanup_clean_done(self, result):
         self._cleanup_cleaning = False
-        self._cleanup_scan_b.configure(state="normal")
-        self._cleanup_cancel_b.configure(state="disabled")
+        self.cleanup_scan_b.configure(state="normal")
+        self.cleanup_cancel_b.configure(state="disabled")
         self._cleanup_free_space = result.get("free_after")
         if result.get("error"):
             self.cleanup_progress.set(0)
@@ -1406,33 +1609,53 @@ class LeftoversView(ctk.CTkFrame):
                             % (name, self.cleanup_ctrl.format_size(recycled_by_category[name]))
                         )
 
+        # Browser cache warning
+        if not dry_run and result.get("browser_cache_affected"):
+            lines.append("")
+            lines.append("⚠ Browser cache items were skipped (files in use).")
+            lines.append("   Close browsers and run again to clean them.")
+
+        # Grouped failed
+        failed_groups = result.get("failed_groups", {}) or {}
+        lines.append("")
+        total_failed = sum(len(v) for v in failed_groups.values())
+        lines.append("Failed (%d):" % total_failed)
+        if failed_groups:
+            for reason, entries in sorted(failed_groups.items()):
+                lines.append("  %s (%d):" % (reason, len(entries)))
+                for entry in entries[:10]:
+                    lines.append("    %s" % entry.get("path", ""))
+                if len(entries) > 10:
+                    lines.append("    ... and %d more" % (len(entries) - 10))
+        else:
+            lines.append("  None")
+
+        # Grouped skipped
+        skipped_groups = result.get("skipped_groups", {}) or {}
+        lines.append("")
+        total_skipped = sum(len(v) for v in skipped_groups.values())
+        lines.append("Skipped (%d):" % total_skipped)
+        if skipped_groups:
+            for reason, entries in sorted(skipped_groups.items()):
+                lines.append("  %s (%d):" % (reason, len(entries)))
+                for entry in entries[:10]:
+                    lines.append("    %s" % entry.get("path", ""))
+                if len(entries) > 10:
+                    lines.append("    ... and %d more" % (len(entries) - 10))
+        else:
+            lines.append("  None")
+
         removed = result.get("would_remove", []) if dry_run else result.get("removed", [])
         lines.append("")
         lines.append("%s (%d):" % ("Would remove" if dry_run else "Removed", len(removed)))
-        for entry in removed[:100]:
+        for entry in removed[:50]:
             marker = " [Recycle Bin]" if entry.get("recycled") else ""
             lines.append(
                 "  %s  (%s)%s"
                 % (entry.get("path", ""), self.cleanup_ctrl.format_size(entry.get("size", 0)), marker)
             )
-        if len(removed) > 100:
-            lines.append("  ... and %d more" % (len(removed) - 100))
-
-        failed = result.get("failed", []) or []
-        lines.append("")
-        lines.append("Failed (%d):" % len(failed))
-        for entry in failed[:100]:
-            lines.append("  %s - %s" % (entry.get("path", ""), entry.get("reason", "")))
-        if len(failed) > 100:
-            lines.append("  ... and %d more" % (len(failed) - 100))
-
-        skipped = result.get("skipped", []) or []
-        lines.append("")
-        lines.append("Skipped (%d):" % len(skipped))
-        for entry in skipped[:100]:
-            lines.append("  %s - %s" % (entry.get("path", ""), entry.get("reason", "")))
-        if len(skipped) > 100:
-            lines.append("  ... and %d more" % (len(skipped) - 100))
+        if len(removed) > 50:
+            lines.append("  ... and %d more" % (len(removed) - 50))
 
         log_path = result.get("log_path") or self.cleanup_ctrl.get_log_path()
         lines.append("")
@@ -2250,16 +2473,47 @@ class LeftoversView(ctk.CTkFrame):
                     font=ctk.CTkFont(size=12, weight="bold"),
                     text_color=self.theme.colors["primary_text"]).pack(anchor="w", padx=24, pady=(0, 4))
 
-        roots_text = ctk.CTkTextbox(dlg, height=100,
-                                   fg_color=self.theme.colors["glass_panel"],
-                                   text_color=self.theme.colors["secondary_text"],
-                                   border_width=1, border_color=self.theme.colors["border"])
-        roots_text.pack(fill="x", padx=24, pady=(0, 12))
-        roots = self.ctrl.get_approved_roots()
-        roots_text.insert("0.0", "\n".join(roots) if roots else "No roots configured")
-        roots_text.configure(state="disabled")
+        ctk.CTkLabel(dlg, text="One path per line. Empty lines are ignored.",
+                    font=ctk.CTkFont(size=10),
+                    text_color=self.theme.colors["secondary_text"]).pack(anchor="w", padx=24, pady=(0, 4))
 
-        ctk.CTkButton(dlg, text="Close", command=dlg.destroy,
+        self._roots_textbox = ctk.CTkTextbox(dlg, height=100,
+                                   fg_color=self.theme.colors["glass_panel"],
+                                   text_color=self.theme.colors["primary_text"],
+                                   border_width=1, border_color=self.theme.colors["border"])
+        self._roots_textbox.pack(fill="x", padx=24, pady=(0, 12))
+        roots = self.ctrl.get_approved_roots()
+        self._roots_textbox.insert("0.0", "\n".join(roots) if roots else "No roots configured")
+
+        self._roots_dialog = dlg
+        ctk.CTkButton(dlg, text="Configure Roots", command=self._configure_roots,
                      fg_color=self.theme.colors["blue_accent"],
                      hover_color="#1570D6", text_color="white",
-                     height=32, corner_radius=8).pack(pady=(0, 20))
+                     height=32, corner_radius=8).pack(side="left", padx=(24, 8), pady=(0, 20))
+
+        ctk.CTkButton(dlg, text="Close", command=dlg.destroy,
+                     fg_color=self.theme.colors["glass_panel"],
+                     hover_color=self.theme.colors["hover_state"],
+                     text_color=self.theme.colors["primary_text"],
+                     height=32, corner_radius=8).pack(side="right", padx=(8, 24), pady=(0, 20))
+
+    def _configure_roots(self):
+        """Persist the user's roots and apply them to the controller."""
+        from tkinter import messagebox
+        if not messagebox.askyesno("Apply Roots", "Apply these scan roots now?"):
+            self._roots_dialog.destroy()
+            return
+
+        raw = self._roots_textbox.get("1.0", "end").strip()
+        roots = [line.strip() for line in raw.splitlines() if line.strip()]
+
+        ss = getattr(self.navigation, "settings_service", None)
+        if ss is not None:
+            ss.set("leftovers_scan_roots", roots)
+            ss.save()
+
+        self.ctrl.set_roots(roots)
+        self._roots_textbox.delete("1.0", "end")
+        self._roots_textbox.insert("0.0", "\n".join(roots) if roots else "No roots configured")
+
+        self._roots_dialog.destroy()
