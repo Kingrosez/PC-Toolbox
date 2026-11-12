@@ -12,9 +12,10 @@ CATEGORIES = ["All Items", "Files", "Registry Entries", "Shortcuts", "Related Da
 
 
 class LeftoversController:
-    def __init__(self, activity_service: ActivityService, service=None):
+    def __init__(self, activity_service: ActivityService, service=None, settings_service=None):
         self.activity_service = activity_service
         self.service = service or LeftoversService()
+        self.settings_service = settings_service
         self._is_scanning = False
         self._lock = threading.Lock()
         self._cancel = False
@@ -32,6 +33,19 @@ class LeftoversController:
         if self._approved_roots:
             return list(self._approved_roots)
         return self.service.get_approved_roots()
+
+    def load_roots(self) -> List[str]:
+        """Load configured scan roots from settings_service and apply them.
+
+        Returns the list of roots that were loaded (empty if none configured).
+        """
+        roots: List[str] = []
+        if self.settings_service is not None:
+            raw = self.settings_service.get("leftovers_scan_roots", [])
+            if isinstance(raw, list):
+                roots = [str(r) for r in raw if r and str(r).strip()]
+        self.set_roots(roots)
+        return list(roots)
 
     def scan(self, roots=None) -> Dict[str, Any]:
         with self._lock:
