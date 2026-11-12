@@ -84,8 +84,6 @@ class LeftoversService:
         self._seen = set()
 
         approved = self.get_approved_roots() if roots is None else self._validate_roots(roots)
-        if roots is not None:
-            approved = self._validate_roots(roots)
 
         results = []
         errors = []

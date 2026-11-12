@@ -288,6 +288,20 @@ class LeftoversView(ctk.CTkFrame):
             text_color=self.theme.colors["primary_text"],
         ).grid(row=0, column=0, sticky="w", pady=(0, 8))
 
+        self._scan_errors = []
+        self._error_banner = ctk.CTkFrame(
+            table_container, fg_color=self.theme.colors["red_accent"],
+            corner_radius=8, border_width=1, border_color=self.theme.colors["border"],
+        )
+        self._error_banner.grid(row=1, column=0, sticky="ew", pady=(0, 8))
+        self._error_banner.grid_remove()
+        self._error_text = ctk.CTkLabel(
+            self._error_banner, text="",
+            font=ctk.CTkFont(size=11),
+            text_color="white", justify="left", wraplength=600,
+        )
+        self._error_text.pack(padx=12, pady=8)
+
         # Filter bar
         filter_frame = ctk.CTkFrame(table_container, fg_color="transparent")
         filter_frame.grid(row=1, column=0, sticky="ew", pady=(0, 8))
@@ -2169,6 +2183,7 @@ class LeftoversView(ctk.CTkFrame):
         self.scan_b.configure(state="normal")
         self.can_b.configure(state="disabled")
         self._items = result.get("items", [])
+        self._scan_errors = list(result.get("errors", []) or [])
         self._last_updated = datetime.now().strftime("%H:%M:%S")
         self.updated_lbl.configure(text="Last updated: %s" % self._last_updated)
 
@@ -2183,6 +2198,16 @@ class LeftoversView(ctk.CTkFrame):
             self._card_cache["size"].configure(text="Unknown")
         self._card_cache["apps"].configure(text=str(summary.get("apps_found", 0)))
         self._card_cache["time"].configure(text=self._fmt_duration(dur))
+
+        # Surface scan problems (permission denied, root not accessible) so the
+        # user does not mistake a failing scan for a clean one with zero items.
+        if self._scan_errors:
+            self._error_banner.grid()
+            self._error_text.configure(text="%d problem(s) during scan:\n%s" % (
+                len(self._scan_errors), "\n".join(str(e) for e in self._scan_errors[:5])))
+        else:
+            self._error_banner.grid_remove()
+            self._error_text.configure(text="")
 
         self._apply_filters()
         self._scan_th = None
@@ -2465,7 +2490,7 @@ class LeftoversView(ctk.CTkFrame):
                     font=ctk.CTkFont(size=18, weight="bold"),
                     text_color=self.theme.colors["primary_text"]).pack(pady=(20, 10))
 
-        ctk.CTkLabel(dlg, text="Session-only settings.",
+        ctk.CTkLabel(dlg, text="Scan roots are saved and survive restarts.",
                     font=ctk.CTkFont(size=11),
                     text_color=self.theme.colors["secondary_text"]).pack(pady=(0, 16))
 
@@ -2497,6 +2522,34 @@ class LeftoversView(ctk.CTkFrame):
                      text_color=self.theme.colors["primary_text"],
                      height=32, corner_radius=8).pack(side="right", padx=(8, 24), pady=(0, 20))
 
+    def _validate_roots(self, raw_roots):
+        """Filter user input to safe, existing directories.
+
+        Returns (valid_roots, rejected) where rejected is a list of the
+        input lines that were refused, with a short reason each.
+        """
+        from tkinter import messagebox
+
+        valid = []
+        rejected = []
+        for line in raw_roots:
+            line = line.strip()
+            if not line:
+                continue
+            if not os.path.isabs(line):
+                rejected.append((line, "must be an absolute path"))
+                continue
+            norm = os.path.normpath(line)
+            if os.path.dirname(norm) == norm:
+                # Drive root or filesystem root — never a scan target.
+                rejected.append((line, "cannot be a drive root"))
+                continue
+            if not os.path.isdir(norm):
+                rejected.append((line, "directory does not exist"))
+                continue
+            valid.append(norm)
+        return valid, rejected
+
     def _configure_roots(self):
         """Persist the user's roots and apply them to the controller."""
         from tkinter import messagebox
@@ -2505,15 +2558,34 @@ class LeftoversView(ctk.CTkFrame):
             return
 
         raw = self._roots_textbox.get("1.0", "end").strip()
-        roots = [line.strip() for line in raw.splitlines() if line.strip()]
+        raw_roots = [line.strip() for line in raw.splitlines() if line.strip()]
+        roots, rejected = self._validate_roots(raw_roots)
+
+        if rejected:
+            detail = "\n".join("%s — %s" % (p, r) for p, r in rejected)
+            messagebox.showwarning(
+                "Invalid scan roots",
+                "These paths were not applied:\n%s" % detail,
+            )
+            if not roots:
+                self._roots_dialog.destroy()
+                return
 
         ss = getattr(self.navigation, "settings_service", None)
+        saved = False
         if ss is not None:
             ss.set("leftovers_scan_roots", roots)
-            ss.save()
+            saved = ss.save()
 
         self.ctrl.set_roots(roots)
         self._roots_textbox.delete("1.0", "end")
         self._roots_textbox.insert("0.0", "\n".join(roots) if roots else "No roots configured")
+
+        if ss is not None and not saved:
+            messagebox.showwarning(
+                "Settings not saved",
+                "The roots were applied but could not be saved to disk. "
+                "They will not survive a restart.",
+            )
 
         self._roots_dialog.destroy()
